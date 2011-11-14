@@ -2,11 +2,11 @@ module RSpec
   module Core
     module Let
 
-      module ClassMethods
+      module ExampleGroupMethods
         # Generates a method whose return value is memoized
         # after the first call.
         #
-        # == Examples
+        # @example
         #
         #  describe Thing do
         #    let(:thing) { Thing.new }
@@ -21,7 +21,7 @@ module RSpec
         #  end
         def let(name, &block)
           define_method(name) do
-            __memoized[name] ||= instance_eval(&block)
+            __memoized.fetch(name) {|k| __memoized[k] = instance_eval(&block) }
           end
         end
 
@@ -30,7 +30,7 @@ module RSpec
         # purpose of setting up state and providing a memoized
         # reference to that state.
         #
-        # == Examples
+        # @example
         #
         #  class Thing
         #    def self.count
@@ -57,12 +57,12 @@ module RSpec
         #      let(:thing) { Thing.new }
         #
         #      it "is not invoked implicitly" do
-        #        Thing.count.should == 0
+        #        Thing.count.should eq(0)
         #      end
         #
         #      it "can be invoked explicitly" do
         #        thing
-        #        Thing.count.should == 1
+        #        Thing.count.should eq(1)
         #      end
         #    end
         #
@@ -70,12 +70,12 @@ module RSpec
         #      let!(:thing) { Thing.new }
         #
         #      it "is invoked implicitly" do
-        #        Thing.count.should == 1
+        #        Thing.count.should eq(1)
         #      end
         #
         #      it "returns memoized version on first invocation" do
         #        thing
-        #        Thing.count.should == 1
+        #        Thing.count.should eq(1)
         #      end
         #    end
         #  end
@@ -85,15 +85,16 @@ module RSpec
         end
       end
 
-      module InstanceMethods
-        def __memoized # :nodoc:
+      module ExampleMethods
+        # @api private
+        def __memoized
           @__memoized ||= {}
         end
       end
 
-      def self.included(mod) # :nodoc:
-        mod.extend ClassMethods
-        mod.__send__ :include, InstanceMethods
+      def self.included(mod)
+        mod.extend ExampleGroupMethods
+        mod.__send__ :include, ExampleMethods
       end
 
     end

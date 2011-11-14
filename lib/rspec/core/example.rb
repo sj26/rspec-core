@@ -1,9 +1,16 @@
 module RSpec
   module Core
+    # Wrapper for an instance of a subclass of [ExampleGroup](ExampleGroup). An
+    # instance of `Example` is returned by the
+    # [example](ExampleGroup#example-instance_method) method available in
+    # examples, [before](Hooks#before-instance_method) and
+    # [after](Hooks#after-instance_method) hooks, and yielded to
+    # [around](Hooks#around-instance_method) hooks.
+    # @see ExampleGroup
     class Example
-
-      attr_reader :metadata, :options, :example_group_instance
-
+      # @api private
+      #
+      # Used to define methods that delegate to this example's metadata
       def self.delegate_to_metadata(*keys)
         keys.each do |key|
           define_method(key) {@metadata[key]}
@@ -12,28 +19,53 @@ module RSpec
 
       delegate_to_metadata :description, :full_description, :execution_result, :file_path, :pending, :location
 
-      def initialize(example_group_class, desc, options, example_block=nil)
-        @example_group_class, @options, @example_block = example_group_class, options, example_block
-        @metadata  = @example_group_class.metadata.for_example(desc, options)
+      # @attr_reader
+      #
+      # Returns the first exception raised in the context of running this
+      # example (nil if no exception is raised)
+      attr_reader :exception
+
+      # @attr_reader
+      #
+      # Returns the metadata object associated with this example.
+      attr_reader :metadata
+
+      # @attr_reader
+      # @api private
+      #
+      # Returns the example_group_instance that provides the context for
+      # running this example.
+      attr_reader :example_group_instance
+
+      # Creates a new instance of Example.
+      # @param example_group_class the subclass of ExampleGroup in which this Example is declared
+      # @param description the String passed to the `it` method (or alias)
+      # @param metadata additional args passed to `it` to be used as metadata
+      # @param example_block the block of code that represents the example
+      def initialize(example_group_class, description, metadata, example_block=nil)
+        @example_group_class, @options, @example_block = example_group_class, metadata, example_block
+        @metadata  = @example_group_class.metadata.for_example(description, metadata)
         @exception = nil
         @pending_declared_in_example = false
       end
 
+      # @deprecated access options via metadata instead
+      def options
+        @options
+      end
+
+      # Returns the example group class that provides the context for running
+      # this example.
       def example_group
         @example_group_class
       end
 
-      def around_hooks
-        @around_hooks ||= example_group.around_hooks_for(self)
-      end
-
-      def apply?(predicate, filters)
-        @metadata.apply?(predicate, filters) ||
-        @example_group_class.apply?(predicate, filters)
-      end
-
       alias_method :pending?, :pending
 
+      # @api
+      # @param example_group_instance the instance of an ExampleGroup subclass
+      # instance_evals the block submitted to the constructor in the
+      # context of the instance of ExampleGroup
       def run(example_group_instance, reporter)
         @example_group_instance = example_group_instance
         @example_group_instance.example = self
@@ -73,31 +105,65 @@ module RSpec
         finish(reporter)
       end
 
+      # @api private
+      #
+      # Wraps the example block in a Proc so it can invoked using `run` or
+      # `call` in [around](../Hooks#around-instance_method) hooks.
+      def self.procsy(metadata, &proc)
+        Proc.new(&proc).extend(Procsy).with(metadata)
+      end
+
+      # @api private
+      module Procsy
+        attr_reader :metadata
+
+        # @api private
+        # @param [Proc]
+        # Adds a `run` method to the extended Proc, allowing it to be invoked
+        # in an [around](../Hooks#around-instance_method) hook using either
+        # `run` or `call`.
+        def self.extended(object)
+          def object.run; call; end
+        end
+
+        # @api private
+        def with(metadata)
+          @metadata = metadata
+          self
+        end
+      end
+
+      # @api private
+      def all_apply?(filters)
+        @metadata.all_apply?(filters) || @example_group_class.all_apply?(filters)
+      end
+
+      # @api private
+      def around_hooks
+        @around_hooks ||= example_group.around_hooks_for(self)
+      end
+
+      # @api private
+      #
+      # Used internally to set an exception in an after hook, which
+      # captures the exception but doesn't raise it.
       def set_exception(exception)
         @exception ||= exception
       end
 
-      def fail_fast(reporter, exception)
+      # @api private
+      #
+      # Used internally to set an exception and fail without actually executing
+      # the example when an exception is raised in before(:all).
+      def fail_with_exception(reporter, exception)
         start(reporter)
         set_exception(exception)
         finish(reporter)
       end
 
-      def self.procsy(metadata, &block)
-        Proc.new(&block).extend(Procsy).with(metadata)
-      end
-
-      module Procsy
-        attr_reader :metadata
-
-        def self.extended(object)
-          def object.run; call; end
-        end
-
-        def with(metadata)
-          @metadata = metadata
-          self
-        end
+      # @api private
+      def any_apply?(filters)
+        metadata.any_apply?(filters)
       end
 
     private
@@ -106,7 +172,7 @@ module RSpec
         if around_hooks.empty?
           yield
         else
-          @example_group_class.eval_around_eachs(self, Example.procsy(metadata, &block)).call
+          @example_group_class.run_around_each_hooks(self, Example.procsy(metadata, &block)).call
         end
       end
 
@@ -142,11 +208,11 @@ module RSpec
 
       def run_before_each
         @example_group_instance.setup_mocks_for_rspec if @example_group_instance.respond_to?(:setup_mocks_for_rspec)
-        @example_group_class.eval_before_eachs(self)
+        @example_group_class.run_before_each_hooks(self)
       end
 
       def run_after_each
-        @example_group_class.eval_after_eachs(self)
+        @example_group_class.run_after_each_hooks(self)
         @example_group_instance.verify_mocks_for_rspec if @example_group_instance.respond_to?(:verify_mocks_for_rspec)
       ensure
         @example_group_instance.teardown_mocks_for_rspec if @example_group_instance.respond_to?(:teardown_mocks_for_rspec)

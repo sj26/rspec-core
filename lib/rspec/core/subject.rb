@@ -1,7 +1,7 @@
 module RSpec
   module Core
     module Subject
-      module InstanceMethods
+      module ExampleMethods
 
         # Returns the subject defined by the example group. The subject block is
         # only executed once per example, the result of which is cached and
@@ -11,7 +11,7 @@ module RSpec
         # declared in the example group, then +subject+ will return a new
         # instance of that class.
         #
-        # == Examples
+        # @example
         #
         #   # explicit subject defined by the subject method
         #   describe Person do
@@ -45,7 +45,7 @@ module RSpec
           # an implicit subject (see +subject+), this supports very concise
           # expressions.
           #
-          # == Examples
+          # @example
           #
           #   describe Person do
           #     it { should be_eligible_to_vote }
@@ -57,7 +57,7 @@ module RSpec
           # Just like +should+, +should_not+ delegates to the subject (implicit or
           # explicit) of the example group.
           #
-          # == Examples
+          # @example
           #
           #   describe Person do
           #     it { should_not be_eligible_to_vote }
@@ -69,20 +69,20 @@ module RSpec
         end
       end
 
-      module ClassMethods
+      module ExampleGroupMethods
         # Creates a nested example group named by the submitted +attribute+,
         # and then generates an example using the submitted block.
         #
         #   # This ...
         #   describe Array do
-        #     its(:size) { should == 0 }
+        #     its(:size) { should eq(0) }
         #   end
         #
         #   # ... generates the same runtime structure as this:
         #   describe Array do
         #     describe "size" do
-        #       it "should == 0" do
-        #         subject.size.should == 0
+        #       it "should eq(0)" do
+        #         subject.size.should eq(0)
         #       end
         #     end
         #   end
@@ -98,7 +98,7 @@ module RSpec
         #       end
         #     end
         #
-        #     its("phone_numbers.first") { should == "555-1212" }
+        #     its("phone_numbers.first") { should eq("555-1212") }
         #   end
         #
         # When the subject is a +Hash+, you can refer to the Hash keys by
@@ -110,12 +110,12 @@ module RSpec
         #         'admin' => :all_permissions }
         #     end
         #
-        #     its([:max_users]) { should == 3 }
-        #     its(['admin']) { should == :all_permissions }
+        #     its([:max_users]) { should eq(3) }
+        #     its(['admin']) { should eq(:all_permissions) }
         #
         #     # You can still access to its regular methods this way:
         #     its(:keys) { should include(:max_users) }
-        #     its(:count) { should == 2 }
+        #     its(:count) { should eq(2) }
         #   end
         def its(attribute, &block)
           describe(attribute) do
@@ -139,7 +139,7 @@ module RSpec
         # Defines an explicit subject for an example group which can then be the
         # implicit receiver (through delegation) of calls to +should+.
         #
-        # == Examples
+        # @example
         #
         #   describe CheckingAccount, "with $50" do
         #     subject { CheckingAccount.new(:amount => 50, :currency => :USD) }
@@ -152,7 +152,7 @@ module RSpec
           block ? @explicit_subject_block = block : explicit_subject || implicit_subject
         end
 
-        attr_reader :explicit_subject_block # :nodoc:
+        attr_reader :explicit_subject_block
 
         private
 
@@ -165,7 +165,7 @@ module RSpec
         end
 
         def implicit_subject
-          described = describes || description
+          described = described_class || description
           Class === described ? proc { described.new } : proc { described }
         end
       end

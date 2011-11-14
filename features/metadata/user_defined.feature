@@ -12,9 +12,11 @@ Feature: User-defined metadata
   behavior in RSpec 3) that allows you to specify metadata using just
   symbols:
 
-    RSpec.configure do |c|
-      c.treat_symbols_as_metadata_keys_with_true_values = true
-    end
+  ```ruby
+  RSpec.configure do |c|
+    c.treat_symbols_as_metadata_keys_with_true_values = true
+  end
+  ```
 
   Each symbol passed as an argument to `describe`, `context` or `it` will
   be a key in the metadata hash, with a corresponding value of `true`.
@@ -24,7 +26,7 @@ Feature: User-defined metadata
       """
       describe "a group with user-defined metadata", :foo => 17 do
         it 'has access to the metadata in the example' do
-          example.metadata[:foo].should == 17
+          example.metadata[:foo].should eq(17)
         end
 
         it 'does not have access to metadata defined on sub-groups' do
@@ -33,11 +35,11 @@ Feature: User-defined metadata
 
         describe 'a sub-group with user-defined metadata', :bar => 12 do
           it 'has access to the sub-group metadata' do
-            example.metadata[:foo].should == 17
+            example.metadata[:foo].should eq(17)
           end
 
           it 'also has access to metadata defined on parent groups' do
-            example.metadata[:bar].should == 12
+            example.metadata[:bar].should eq(12)
           end
         end
       end
@@ -50,13 +52,13 @@ Feature: User-defined metadata
       """
       describe "a group with no user-defined metadata" do
         it 'has an example with metadata', :foo => 17 do
-          example.metadata[:foo].should == 17
+          example.metadata[:foo].should eq(17)
           example.metadata.should_not include(:bar)
         end
 
         it 'has another example with metadata', :bar => 12, :bazz => 33 do
-          example.metadata[:bar].should == 12
-          example.metadata[:bazz].should == 33
+          example.metadata[:bar].should eq(12)
+          example.metadata[:bazz].should eq(33)
           example.metadata.should_not include(:foo)
         end
       end
@@ -99,7 +101,7 @@ Feature: User-defined metadata
         end
 
         it 'can still use a hash for metadata' do
-          example.metadata[:bug].should == 73
+          example.metadata[:bug].should eq(73)
         end
 
         it 'can define simple metadata on an example', :special do

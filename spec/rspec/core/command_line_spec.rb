@@ -11,12 +11,6 @@ module RSpec::Core
       let(:out)    { StringIO.new }
       let(:err)    { StringIO.new }
 
-      def config_options(argv=[])
-        options = RSpec::Core::ConfigurationOptions.new(argv)
-        options.parse_options
-        options
-      end
-
       def command_line(args)
         RSpec::Core::CommandLine.new(config_options(args))
       end
@@ -33,10 +27,16 @@ module RSpec::Core
         result.should be(0)
       end
 
-      it "returns 1 if spec passes" do
+      it "returns 1 if spec fails" do
         err, out = StringIO.new, StringIO.new
         result = command_line([failing_spec_filename]).run(err, out)
         result.should be(1)
+      end
+
+      it "returns 2 if spec fails and --failure-exit-code is 2" do
+        err, out = StringIO.new, StringIO.new
+        result = command_line([failing_spec_filename, "--failure-exit-code", "2"]).run(err, out)
+        result.should be(2)
       end
     end
 
@@ -95,7 +95,7 @@ module RSpec::Core
         # this is necessary to ensure that color works correctly on windows
         config.should_receive(:error_stream=).ordered
         config.should_receive(:output_stream=).ordered
-        config.should_receive(:color_enabled=).ordered
+        config.should_receive(:force).any_number_of_times.ordered
         command_line.run(err, out) rescue nil
       end
 
@@ -156,6 +156,7 @@ module RSpec::Core
 
       before do
         config.stub(:run_hook)
+        config.stub(:files_to_run) { [] }
       end
 
       it "doesn't override output_stream" do

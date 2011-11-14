@@ -1,22 +1,27 @@
 module RSpec
   module Core
+    # ExampleGroup and Example are the main structural elements of rspec-core.
+    # Consider this example:
+    #
+    #     describe Thing do
+    #       it "does something" do
+    #       end
+    #     end
+    #
+    # The object returned by `describe Thing` is a subclass of ExampleGroup.
+    # The object returned by `it "does something"` is an instance of Example,
+    # which serves as a wrapper for an instance of the ExampleGroup in which it
+    # is declared.
     class ExampleGroup
       extend  MetadataHashBuilder::WithDeprecationWarning
       extend  Extensions::ModuleEvalWithArgs
-      extend  Subject::ClassMethods
+      extend  Subject::ExampleGroupMethods
       extend  Hooks
 
       include Extensions::InstanceEvalWithArgs
-      include Subject::InstanceMethods
+      include Subject::ExampleMethods
       include Pending
       include Let
-
-      attr_accessor :example
-
-      def running_example
-        RSpec.deprecate("running_example", "example")
-        example
-      end
 
       def self.world
         RSpec.world
@@ -35,9 +40,9 @@ module RSpec
           end
         end
 
-        delegate_to_metadata :description, :describes, :file_path
+        delegate_to_metadata :description, :described_class, :file_path
         alias_method :display_name, :description
-        alias_method :described_class, :describes
+        alias_method :describes, :described_class
       end
 
       def self.define_example_method(name, extra_options={})
@@ -60,16 +65,20 @@ module RSpec
 
       alias_example_to :it
       alias_example_to :specify
-      alias_example_to :focused, :focused => true, :focus => true
-      alias_example_to :focus,   :focused => true, :focus => true
-      alias_example_to :pending, :pending => true
-      alias_example_to :xit,     :pending => true
+
+      alias_example_to :pending,  :pending => true
+      alias_example_to :xexample, :pending => true
+      alias_example_to :xit,      :pending => true
+      alias_example_to :xspecify, :pending => true
+
+      alias_example_to :focused,  :focused => true, :focus => true
+      alias_example_to :focus,    :focused => true, :focus => true
 
       def self.define_nested_shared_group_method(new_name, report_label=nil)
         module_eval(<<-END_RUBY, __FILE__, __LINE__)
           def self.#{new_name}(name, *args, &customization_block)
-            shared_block = world.shared_example_groups[name]
-            raise "Could not find shared example group named \#{name.inspect}" unless shared_block
+            shared_block = find_shared("examples", name)
+            raise "Could not find shared examples \#{name.inspect}" unless shared_block
 
             group = describe("#{report_label || "it should behave like"} \#{name}") do
               module_eval_with_args(*args, &shared_block)
@@ -89,12 +98,26 @@ module RSpec
 
       alias_it_should_behave_like_to :it_behaves_like, "behaves like"
 
+      # Includes shared content declared with `name`.
+      #
+      # @see SharedExampleGroup
       def self.include_context(name)
-        module_eval(&world.shared_example_groups[name])
+        module_eval(&find_shared("context", name))
       end
 
-      class << self
-        alias_method :include_examples, :include_context
+      # Includes shared content declared with `name`.
+      #
+      # @see SharedExampleGroup
+      def self.include_examples(name)
+        module_eval(&find_shared("examples", name))
+      end
+
+      def self.find_shared(label, name)
+        if world.shared_example_groups.has_key?(name)
+          world.shared_example_groups[name]
+        else
+          raise ArgumentError, "Could not find shared #{label} #{name.inspect}"
+        end
       end
 
       def self.examples
@@ -109,10 +132,13 @@ module RSpec
         @descendant_filtered_examples ||= filtered_examples + children.inject([]){|l,c| l + c.descendant_filtered_examples}
       end
 
+      # @see Metadata
       def self.metadata
         @metadata if defined?(@metadata)
       end
 
+      # @api private
+      # @return [Metadata] belonging to the parent of a nested [ExampleGroup](ExampleGroup)
       def self.superclass_metadata
         @superclass_metadata ||= self.superclass.respond_to?(:metadata) ? self.superclass.metadata : nil
       end
@@ -144,7 +170,7 @@ module RSpec
       end
 
       def self.children
-        @children ||= []
+        @children ||= [].extend(Extensions::Ordered)
       end
 
       def self.descendants
@@ -190,7 +216,7 @@ module RSpec
 
       def self.store_before_all_ivars(example_group_instance)
         return if example_group_instance.instance_variables.empty?
-        example_group_instance.instance_variables.each { |ivar| 
+        example_group_instance.instance_variables.each { |ivar|
           before_all_ivars[ivar] = example_group_instance.instance_variable_get(ivar)
         }
       end
@@ -200,7 +226,7 @@ module RSpec
         ivars.each { |ivar, val| example_group_instance.instance_variable_set(ivar, val) }
       end
 
-      def self.eval_before_alls(example_group_instance)
+      def self.run_before_all_hooks(example_group_instance)
         return if descendant_filtered_examples.empty?
         assign_before_all_ivars(superclass.before_all_ivars, example_group_instance)
         world.run_hook_filtered(:before, :all, self, example_group_instance)
@@ -208,7 +234,7 @@ module RSpec
         store_before_all_ivars(example_group_instance)
       end
 
-      def self.eval_around_eachs(example, initial_procsy)
+      def self.run_around_each_hooks(example, initial_procsy)
         example.around_hooks.reverse.inject(initial_procsy) do |procsy, around_hook|
           Example.procsy(procsy.metadata) do
             example.example_group_instance.instance_eval_with_args(procsy, &around_hook)
@@ -216,17 +242,17 @@ module RSpec
         end
       end
 
-      def self.eval_before_eachs(example)
+      def self.run_before_each_hooks(example)
         world.run_hook_filtered(:before, :each, self, example.example_group_instance, example)
         ancestors.reverse.each { |ancestor| ancestor.run_hook(:before, :each, example.example_group_instance) }
       end
 
-      def self.eval_after_eachs(example)
+      def self.run_after_each_hooks(example)
         ancestors.each { |ancestor| ancestor.run_hook(:after, :each, example.example_group_instance) }
         world.run_hook_filtered(:after, :each, self, example.example_group_instance, example)
       end
 
-      def self.eval_after_alls(example_group_instance)
+      def self.run_after_all_hooks(example_group_instance)
         return if descendant_filtered_examples.empty?
         assign_before_all_ivars(before_all_ivars, example_group_instance)
 
@@ -258,21 +284,21 @@ An error occurred in an after(:all) hook.
         reporter.example_group_started(self)
 
         begin
-          eval_before_alls(new)
+          run_before_all_hooks(new)
           result_for_this_group = run_examples(reporter)
-          results_for_descendants = children.map {|child| child.run(reporter)}.all?
+          results_for_descendants = children.ordered.map {|child| child.run(reporter)}.all?
           result_for_this_group && results_for_descendants
         rescue Exception => ex
           fail_filtered_examples(ex, reporter)
         ensure
-          eval_after_alls(new)
+          run_after_all_hooks(new)
           before_all_ivars.clear
           reporter.example_group_finished(self)
         end
       end
 
       def self.fail_filtered_examples(exception, reporter)
-        filtered_examples.each { |example| example.fail_fast(reporter, exception) }
+        filtered_examples.each { |example| example.fail_with_exception(reporter, exception) }
 
         children.each do |child|
           reporter.example_group_started(child)
@@ -287,7 +313,7 @@ An error occurred in an after(:all) hook.
       end
 
       def self.run_examples(reporter)
-        filtered_examples.map do |example|
+        filtered_examples.ordered.map do |example|
           next if RSpec.wants_to_quit
           instance = new
           set_ivars(instance, before_all_ivars)
@@ -297,8 +323,14 @@ An error occurred in an after(:all) hook.
         end.all?
       end
 
-      def self.apply?(predicate, filters)
-        metadata.apply?(predicate, filters)
+      # @api private
+      def self.any_apply?(filters)
+        metadata.any_apply?(filters)
+      end
+
+      # @api private
+      def self.all_apply?(filters)
+        metadata.all_apply?(filters)
       end
 
       def self.declaration_line_numbers
@@ -315,10 +347,34 @@ An error occurred in an after(:all) hook.
         ivars.each {|name, value| instance.instance_variable_set(name, value)}
       end
 
+      # @attr_reader
+      # Returns the [Example](Example) object that wraps this instance of
+      # `ExampleGroup`
+      attr_accessor :example
+
+      # @deprecated use [example](ExampleGroup#example-instance_method)
+      def running_example
+        RSpec.deprecate("running_example", "example")
+        example
+      end
+
+      # Returns the class or module passed to the `describe` method (or alias).
+      # Returns nil if the subject is not a class or module.
+      # @example
+      #     describe Thing do
+      #       it "does something" do
+      #         described_class == Thing
+      #       end
+      #     end
+      #
+      #
       def described_class
         self.class.described_class
       end
 
+      # @api private
+      # instance_evals the block, capturing and reporting an exception if
+      # raised
       def instance_eval_with_rescue(&hook)
         begin
           instance_eval(&hook)

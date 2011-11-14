@@ -1,6 +1,7 @@
+require 'erb'
+
 module RSpec
   module Core
-
     class ConfigurationOptions
       attr_reader :options
 
@@ -9,59 +10,59 @@ module RSpec
       end
 
       def configure(config)
-        keys = options.keys
-        keys.unshift(:requires) if keys.delete(:requires)
-        keys.unshift(:libs)     if keys.delete(:libs)
-        
-        formatters = options[:formatters] if keys.delete(:formatters)
-        
-        config.exclusion_filter.merge! options[:exclusion_filter] if keys.delete(:exclusion_filter)
-        
-        keys.each do |key|
-          config.send("#{key}=", options[key]) if config.respond_to?("#{key}=")
+        formatters = options.delete(:formatters)
+
+        config.filter_manager = filter_manager
+
+        order(options.keys, :libs, :requires, :default_path, :pattern).each do |key|
+          force?(key) ? config.force(key => options[key]) : config.send("#{key}=", options[key]) 
         end
-        
+
         formatters.each {|pair| config.add_formatter(*pair) } if formatters
       end
 
-      def drb_argv
-        argv = []
-        argv << "--color"        if options[:color_enabled]
-        argv << "--profile"      if options[:profile_examples]
-        argv << "--backtrace"    if options[:full_backtrace]
-        argv << "--tty"          if options[:tty]
-        argv << "--fail-fast"    if options[:fail_fast]
-        argv << "--line_number"  << options[:line_number]             if options[:line_number]
-        argv << "--options"      << options[:custom_options_file]     if options[:custom_options_file]
-        argv << "--example"      << options[:full_description].source if options[:full_description]
-        if options[:filter]
-          options[:filter].each_pair do |k, v|
-            argv << "--tag" << k.to_s
-          end
+      def parse_options
+        @options ||= extract_filters_from(*all_configs).inject do |merged, pending|
+          merged.merge(pending)
         end
-        if options[:formatters]
-          options[:formatters].each do |pair|
-            argv << "--format" << pair[0]
-            argv << "--out" << pair[1] if pair[1]
-          end
-        end
-        (options[:libs] || []).each do |path|
-          argv << "-I" << path
-        end
-        (options[:requires] || []).each do |path|
-          argv << "--require" << path
-        end
-        argv + options[:files_or_directories_to_run]
       end
 
-      def parse_options
-        @options ||= [file_options, command_line_options, env_options].inject {|merged, o| merged.merge o}
+      def drb_argv
+        DrbOptions.new(options, filter_manager).options
+      end
+
+      def filter_manager
+        @filter_manager ||= FilterManager.new
       end
 
     private
 
+      NON_FORCED_OPTIONS = [:debug, :requires, :libs, :files_or_directories_to_run, :line_numbers, :full_description]
+
+      def force?(key)
+        !NON_FORCED_OPTIONS.include?(key)
+      end
+
+      def order(keys, *ordered)
+        ordered.reverse.each do |key|
+          keys.unshift(key) if keys.delete(key)
+        end
+        keys
+      end
+
+      def extract_filters_from(*configs)
+        configs.compact.each do |config|
+          filter_manager.include config.delete(:inclusion_filter) if config.has_key?(:inclusion_filter)
+          filter_manager.exclude config.delete(:exclusion_filter) if config.has_key?(:exclusion_filter)
+        end
+      end
+
+      def all_configs
+        @all_configs ||= file_options << command_line_options << env_options
+      end
+
       def file_options
-        custom_options_file ? custom_options : global_options.merge(local_options)
+        custom_options_file ? [custom_options] : [global_options, local_options]
       end
 
       def env_options
@@ -95,8 +96,7 @@ module RSpec
       end
 
       def options_file_as_erb_string(path)
-        require 'erb'
-        ERB.new(IO.read(path)).result(binding)
+        ERB.new(File.read(path)).result(binding)
       end
 
       def custom_options_file
@@ -115,7 +115,6 @@ module RSpec
           nil
         end
       end
-
     end
   end
 end

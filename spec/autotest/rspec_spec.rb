@@ -2,7 +2,7 @@ require "spec_helper"
 
 describe Autotest::Rspec2 do
   let(:rspec_autotest) { Autotest::Rspec2.new }
-  let(:spec_cmd) { File.expand_path(File.join(File.dirname(__FILE__), '..', '..', 'bin', 'rspec')) }
+  let(:spec_cmd) { File.expand_path("../../../exe/rspec", __FILE__) }
   let(:ruby_cmd) { "ruby" }
 
   before do
@@ -50,7 +50,7 @@ describe Autotest::Rspec2 do
       end
     end
 
-    it "gives '--tty' to #{Autotest::Rspec2::SPEC_PROGRAM}, not '--autotest'" do
+    it "gives '--tty' to #{Autotest::Rspec2::RSPEC_EXECUTABLE}, not '--autotest'" do
       cmd = rspec_autotest.make_test_cmd(@files_to_test)
       cmd.should match(' --tty ')
       cmd.should_not match(' --autotest ')
@@ -86,14 +86,14 @@ describe Autotest::Rspec2 do
     let(:spec_file)    { "spec/autotest/some_spec.rb" }
 
     it "returns no failures if no failures were given in the output" do
-      rspec_autotest.consolidate_failures([[]]).should == {}
+      rspec_autotest.consolidate_failures([[]]).should eq({})
     end
 
     it "returns a hash with the spec filename => spec name for each failure or error" do
       failures = [ [ "false should be false", spec_file ] ]
-      rspec_autotest.consolidate_failures(failures).should == {
+      rspec_autotest.consolidate_failures(failures).should eq({
         spec_file => ["false should be false"]
-      }
+      })
     end
 
     context "when subject file appears before the spec file in the backtrace" do

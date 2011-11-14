@@ -82,5 +82,79 @@ module RSpec::Core
       end
     end
 
+    %w[--tag -t].each do |option|
+      describe option do
+        context "without ~" do
+          it "treats no value as true" do
+            options = Parser.parse!([option, 'foo'])
+            options[:inclusion_filter].should eq(:foo => true)
+          end
+
+          it "treats 'true' as true" do
+            options = Parser.parse!([option, 'foo:true'])
+            options[:inclusion_filter].should eq(:foo => true)
+          end
+
+          it "treats 'nil' as nil" do
+            options = Parser.parse!([option, 'foo:nil'])
+            options[:inclusion_filter].should eq(:foo => nil)
+          end
+
+          it "treats 'false' as false" do
+            options = Parser.parse!([option, 'foo:false'])
+            options[:inclusion_filter].should eq(:foo => false)
+          end
+
+          it "merges muliple invocations" do
+            options = Parser.parse!([option, 'foo:false', option, 'bar:true', option, 'foo:true'])
+            options[:inclusion_filter].should eq(:foo => true, :bar => true)
+          end
+        end
+
+        context "with ~" do
+          it "treats no value as true" do
+            options = Parser.parse!([option, '~foo'])
+            options[:exclusion_filter].should eq(:foo => true)
+          end
+
+          it "treats 'true' as true" do
+            options = Parser.parse!([option, '~foo:true'])
+            options[:exclusion_filter].should eq(:foo => true)
+          end
+
+          it "treats 'nil' as nil" do
+            options = Parser.parse!([option, '~foo:nil'])
+            options[:exclusion_filter].should eq(:foo => nil)
+          end
+
+          it "treats 'false' as false" do
+            options = Parser.parse!([option, '~foo:false'])
+            options[:exclusion_filter].should eq(:foo => false)
+          end
+        end
+      end
+    end
+
+    describe "--order" do
+      it "is nil by default" do
+        Parser.parse!([])[:order].should be_nil
+      end
+
+      %w[rand random].each do |option|
+        context "with #{option}" do
+          it "defines the order as random" do
+            options = Parser.parse!(['--order', option])
+            options[:order].should eq(option)
+          end
+        end
+      end
+    end
+
+    describe "--seed" do
+      it "sets the order to rand:SEED" do
+        options = Parser.parse!(%w[--seed 123])
+        options[:order].should eq("rand:123")
+      end
+    end
   end
 end

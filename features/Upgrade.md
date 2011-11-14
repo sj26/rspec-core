@@ -1,3 +1,47 @@
+The [Changelog](changelog) has a complete list of everything that changed, but
+here are more detailed explanations for those items that warrant them.
+
+# rspec-core-2.7.0.rc1
+
+## what's new
+
+### `rspec` command with no arguments
+
+Now you can just type
+
+    rspec
+
+to run all the specs in the `spec` directory.  If you keep your specs in a
+different directory, you can override the default with the `--default_path`
+argument in a config file:
+
+    # in .rspec
+    --default_path specs
+
+### `rspec` command supports multiple line numbers
+
+Use either of the following to run the examples declared on lines
+37 and 42 of `a_spec.rb`:
+
+    rspec path/to/a_spec.rb --line_number 37 --line_number 42
+    rspec path/to/a_spec.rb:37:42
+
+## what's changed
+
+### `skip_bundler` and `gemfile` rake task options are deprecated and have no effect.
+
+RSpec's rake task invokes the `rspec` command in a subshell. If you invoke
+`bundle exec rake` or include `Bundler.setup` in your `Rakefile`, then
+Bundler will be activated in the subshell as well.
+
+Previously, the rake task managed this for you based on the presence of a
+`Gemfile`. In 2.7.0.rc1, this is done based on the presence of the
+`BUNDLE_GEMFILE` environment variable, which is set in the parent shell by Bundler.
+
+In 2.7.0.rc2 (not yet released), the rake task doesn't do anything at all.
+Turns out Bundler just does the right thing, so rspec doesn't need to do
+anything.
+
 # rspec-core-2.6
 
 ## new APIs for sharing content

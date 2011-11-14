@@ -1,56 +1,66 @@
-require 'rspec/core/extensions'
-require 'rspec/core/load_path'
-require 'rspec/core/deprecation'
-require 'rspec/core/backward_compatibility'
-require 'rspec/core/reporter'
+if defined?(require_relative)
+  def require_rspec(path)
+    require_relative path
+  end
+else
+  def require_rspec(path)
+    require "rspec/#{path}"
+  end
+end
 
-require 'rspec/core/metadata_hash_builder'
-require 'rspec/core/hooks'
-require 'rspec/core/subject'
-require 'rspec/core/let'
-require 'rspec/core/metadata'
-require 'rspec/core/pending'
+require_rspec 'core/filter_manager'
+require_rspec 'core/dsl'
+require_rspec 'core/extensions'
+require_rspec 'core/load_path'
+require_rspec 'core/deprecation'
+require_rspec 'core/backward_compatibility'
+require_rspec 'core/reporter'
 
-require 'rspec/core/world'
-require 'rspec/core/configuration'
-require 'rspec/core/command_line_configuration'
-require 'rspec/core/option_parser'
-require 'rspec/core/configuration_options'
-require 'rspec/core/command_line'
-require 'rspec/core/drb_command_line'
-require 'rspec/core/runner'
-require 'rspec/core/example'
-require 'rspec/core/shared_context'
-require 'rspec/core/shared_example_group'
-require 'rspec/core/example_group'
-require 'rspec/core/version'
-require 'rspec/core/errors'
+require_rspec 'core/metadata_hash_builder'
+require_rspec 'core/hooks'
+require_rspec 'core/subject'
+require_rspec 'core/let'
+require_rspec 'core/metadata'
+require_rspec 'core/pending'
 
-require 'rspec/autorun' if $0.split(File::SEPARATOR).last == 'rcov'
+require_rspec 'core/world'
+require_rspec 'core/configuration'
+require_rspec 'core/project_initializer'
+require_rspec 'core/option_parser'
+require_rspec 'core/drb_options'
+require_rspec 'core/configuration_options'
+require_rspec 'core/command_line'
+require_rspec 'core/drb_command_line'
+require_rspec 'core/runner'
+require_rspec 'core/example'
+require_rspec 'core/shared_example_group'
+require_rspec 'core/example_group'
+require_rspec 'core/version'
+require_rspec 'core/errors'
 
 module RSpec
-  autoload :Matchers, 'rspec/matchers'
+  autoload :Matchers,      'rspec/matchers'
+  autoload :SharedContext, 'rspec/core/shared_context'
 
-  SharedContext = Core::SharedContext
-
-  module Core
-    def self.install_directory
-      @install_directory ||= File.expand_path(File.dirname(__FILE__))
-    end
-  end
-
+  # @api private
+  # Used internally to determine what to do when a SIGINT is received
   def self.wants_to_quit
     world.wants_to_quit
   end
 
+  # @api private
+  # Used internally to determine what to do when a SIGINT is received
   def self.wants_to_quit=(maybe)
     world.wants_to_quit=(maybe)
   end
 
+  # @api private
+  # Internal container for global non-configuration data
   def self.world
     @world ||= RSpec::Core::World.new
   end
 
+  # @api private
   # Used internally to ensure examples get reloaded between multiple runs in
   # the same process.
   def self.reset
@@ -58,46 +68,38 @@ module RSpec
     configuration.reset
   end
 
+  # Returns the global [Configuration](Core/Configuration) object. While you
+  # _can_ use this method to access the configuration, the more common
+  # convention is to use [RSpec.configure](RSpec#configure-class_method).
+  #
+  # @example
+  #     RSpec.configuration.drb_port = 1234
+  # @see RSpec.configure
+  # @see Core::Configuration
   def self.configuration
     @configuration ||= RSpec::Core::Configuration.new
   end
 
-  # Yields the global configuration object
+  # @yield [Configuration] global configuration
   #
-  # == Examples
-  #
-  # RSpec.configure do |config|
-  #   config.format = 'documentation'
-  # end
+  # @example
+  #     RSpec.configure do |config|
+  #       config.add_formatter 'documentation'
+  #     end
+  # @see Core::Configuration
   def self.configure
-    warn_about_deprecated_configure if RSpec.world.example_groups.any?
     yield configuration if block_given?
   end
 
+  # @api private
+  # Used internally to clear remaining groups when fail_fast is set
   def self.clear_remaining_example_groups
     world.example_groups.clear
   end
 
-  private
-
-    def self.warn_about_deprecated_configure
-      warn <<-NOTICE
-
-*****************************************************************
-DEPRECATION WARNING: you are using deprecated behaviour that will
-be removed from RSpec 3.
-
-You have set some configuration options after an example group has
-already been defined.  In RSpec 3, this will not be allowed.  All
-configuration should happen before the first example group is
-defined.  The configuration is happening at:
-
-  #{caller[1]}
-*****************************************************************
-
-NOTICE
-    end
+  module Core
+  end
 end
 
-require 'rspec/core/backward_compatibility'
-require 'rspec/monkey'
+require_rspec 'core/backward_compatibility'
+require_rspec 'monkey'

@@ -1,20 +1,10 @@
 require 'spec_helper'
 require 'ostruct'
-require 'tmpdir'
 
 describe RSpec::Core::ConfigurationOptions do
+  include ConfigOptionsHelper
 
-  def config_options_object(*args)
-    coo = RSpec::Core::ConfigurationOptions.new(args)
-    coo.parse_options
-    coo
-  end
-
-  def parse_options(*args)
-    config_options_object(*args).options
-  end
-
-  it "warns when HOME env var is not set" do
+  it "warns when HOME env var is not set", :unless => (RUBY_PLATFORM == 'java') do
     begin
       orig_home = ENV.delete("HOME")
       coo = RSpec::Core::ConfigurationOptions.new([])
@@ -41,26 +31,92 @@ describe RSpec::Core::ConfigurationOptions do
       config.should_receive(:add_formatter).ordered
       opts.configure(config)
     end
-    
+
+    it "sends default_path before files_or_directories_to_run" do
+      opts = config_options_object(*%w[--default_path spec])
+      config = double("config").as_null_object
+      config.should_receive(:force).with(:default_path => 'spec').ordered
+      config.should_receive(:files_or_directories_to_run=).ordered
+      opts.configure(config)
+    end
+
+    it "sends pattern before files_or_directories_to_run" do
+      opts = config_options_object(*%w[--pattern **/*.spec])
+      config = double("config").as_null_object
+      config.should_receive(:force).with(:pattern => '**/*.spec').ordered
+      config.should_receive(:files_or_directories_to_run=).ordered
+      opts.configure(config)
+    end
+
     it "merges the :exclusion_filter option with the default exclusion_filter" do
       opts = config_options_object(*%w[--tag ~slow])
       config = RSpec::Core::Configuration.new
       opts.configure(config)
       config.exclusion_filter.should have_key(:slow)
     end
+
+    it "forces color_enabled" do
+      opts = config_options_object(*%w[--color])
+      config = RSpec::Core::Configuration.new
+      config.should_receive(:force).with(:color => true)
+      opts.configure(config)
+    end
+
+    it "assigns filter" do
+      pending
+    end
+
+    [
+      ["--failure-exit-code", "3", :failure_exit_code, 3 ],
+      ["--pattern", "foo/bar", :pattern, "foo/bar"],
+      ["--failure-exit-code", "37", :failure_exit_code, 37],
+      ["--default_path", "behavior", :default_path, "behavior"],
+      ["--drb", nil, :drb, true],
+      ["--order", "rand", :order, "rand"],
+      ["--seed", "37", :order, "rand:37"],
+      ["--drb-port", "37", :drb_port, 37],
+      ["--backtrace", nil, :full_backtrace, true],
+      ["--profile", nil, :profile_examples, true],
+      ["--tty", nil, :tty, true]
+    ].each do |cli_option, cli_value, config_key, config_value|
+      it "forces #{config_key}" do
+        opts = config_options_object(*[cli_option, cli_value].compact)
+        config = RSpec::Core::Configuration.new
+        config.should_receive(:force) do |pair|
+          pair.keys.first.should eq(config_key)
+          pair.values.first.should eq(config_value)
+        end
+        opts.configure(config)
+      end
+    end
+
+    it "sets debug directly" do
+      opts = config_options_object("--debug")
+      config = RSpec::Core::Configuration.new
+      config.should_receive(:debug=).with(true)
+      opts.configure(config)
+    end
   end
 
   describe "-c, --color, and --colour" do
-    it "sets :color_enabled => true" do
-      parse_options('-c').should include(:color_enabled => true)
-      parse_options('--color').should include(:color_enabled => true)
-      parse_options('--colour').should include(:color_enabled => true)
+    it "sets :color => true" do
+      parse_options('-c').should include(:color => true)
+      parse_options('--color').should include(:color => true)
+      parse_options('--colour').should include(:color => true)
     end
   end
 
   describe "--no-color" do
-    it "sets :color_enabled => false" do
-      parse_options('--no-color').should include(:color_enabled => false)
+    it "sets :color => false" do
+      parse_options('--no-color').should include(:color => false)
+    end
+
+    it "overrides previous :color => true" do
+      parse_options('--color', '--no-color').should include(:color => false)
+    end
+
+    it "gets overriden by a subsequent :color => true" do
+      parse_options('--no-color', '--color').should include(:color => true)
     end
   end
 
@@ -103,8 +159,13 @@ describe RSpec::Core::ConfigurationOptions do
 
   describe '--line_number' do
     it "sets :line_number" do
-      parse_options('-l','3').should include(:line_number => '3')
-      parse_options('--line_number','3').should include(:line_number => '3')
+      parse_options('-l','3').should include(:line_numbers => ['3'])
+      parse_options('--line_number','3').should include(:line_numbers => ['3'])
+    end
+
+    it "can be specified multiple times" do
+      parse_options('-l','3', '-l', '6').should include(:line_numbers => ['3', '6'])
+      parse_options('--line_number','3', '--line_number', '6').should include(:line_numbers => ['3', '6'])
     end
   end
 
@@ -139,6 +200,18 @@ describe RSpec::Core::ConfigurationOptions do
     end
   end
 
+  describe "--failure-exit-code" do
+    it "sets :failure_exit_code" do
+      parse_options('--failure-exit-code', '0').should include(:failure_exit_code => 0)
+      parse_options('--failure-exit-code', '1').should include(:failure_exit_code => 1)
+      parse_options('--failure-exit-code', '2').should include(:failure_exit_code => 2)
+    end
+
+    it "overrides previous :failure_exit_code" do
+      parse_options('--failure-exit-code', '2', '--failure-exit-code', '3').should include(:failure_exit_code => 3)
+    end
+  end
+
   describe "--options" do
     it "sets :custom_options_file" do
       parse_options(*%w[-O my.opts]).should include(:custom_options_file => "my.opts")
@@ -163,15 +236,13 @@ describe RSpec::Core::ConfigurationOptions do
       end
 
       it "turns off the debugger option if --drb is specified in the options file" do
-        File.stub(:exist?) { true }
-        IO.stub(:read) { "--drb" }
+        File.open("./.rspec", "w") {|f| f << "--drb"}
         config_options_object("--debug").drb_argv.should_not include("--debug")
         config_options_object("-d"     ).drb_argv.should_not include("--debug")
       end
 
       it "turns off the debugger option if --debug is specified in the options file" do
-        File.stub(:exist?) { true }
-        IO.stub(:read) { "--debug" }
+        File.open("./.rspec", "w") {|f| f << "--debug"}
         config_options_object("--drb").drb_argv.should_not include("--debug")
         config_options_object("-X"   ).drb_argv.should_not include("--debug")
       end
@@ -182,6 +253,21 @@ describe RSpec::Core::ConfigurationOptions do
     end
 
   end
+
+  describe "--no-drb" do
+    it "disables drb" do
+      parse_options("--no-drb").should include(:drb => false)
+    end
+
+    it "overrides a previous drb => true" do
+      parse_options("--drb", "--no-drb").should include(:drb => false)
+    end
+
+    it "gets overriden by a subsquent drb => true" do
+      parse_options("--no-drb", "--drb").should include(:drb => true)
+    end
+  end
+
 
   describe "files_or_directories_to_run" do
     it "parses files from '-c file.rb dir/file.rb'" do
@@ -203,123 +289,31 @@ describe RSpec::Core::ConfigurationOptions do
 
     it "parses dir and files from 'spec/file1_spec.rb, spec/file2_spec.rb'" do
       parse_options("dir", "spec/file1_spec.rb", "spec/file2_spec.rb").should include(:files_or_directories_to_run => ["dir", "spec/file1_spec.rb", "spec/file2_spec.rb"])
-
     end
-
   end
 
-  # TODO ensure all options are output
-  describe "#drb_argv" do
-    it "preserves extra arguments" do
-      File.stub(:exist?) { false }
-      config_options_object(*%w[ a --drb b --color c ]).drb_argv.should =~ %w[ --color a b c ]
-    end
-
-    it "includes --fail-fast" do
-      config_options_object(*%w[--fail-fast]).drb_argv.should include("--fail-fast")
-    end
-
-    it "includes --options" do
-      config_options_object(*%w[--options custom.opts]).drb_argv.should include("--options", "custom.opts")
-    end
-
-    context "with tags" do
-      it "includes the tags" do
-        coo = config_options_object("--tag", "tag")
-        coo.drb_argv.should eq(["--tag", "tag"])
-      end
-
-      it "leaves tags intact" do
-        coo = config_options_object("--tag", "tag")
-        coo.drb_argv
-        coo.options[:filter].should eq( {:tag=>true} )
-      end
-    end
-
-    context "with formatters" do
-      it "includes the formatters" do
-        coo = config_options_object("--format", "d")
-        coo.drb_argv.should eq(["--format", "d"])
-      end
-
-      it "leaves formatters intact" do
-        coo = config_options_object("--format", "d")
-        coo.drb_argv
-        coo.options[:formatters].should eq([["d"]])
-      end
-
-      it "leaves output intact" do
-        coo = config_options_object("--format", "p", "--out", "foo.txt", "--format", "d")
-        coo.drb_argv
-        coo.options[:formatters].should eq([["p","foo.txt"],["d"]])
-      end
-    end
-
-    context "--drb specified in ARGV" do
-      it "renders all the original arguments except --drb" do
-        config_options_object(*%w[ --drb --color --format s --line_number 1 --example pattern --profile --backtrace -I path/a -I path/b --require path/c --require path/d]).
-          drb_argv.should eq(%w[ --color --profile --backtrace --line_number 1 --example pattern --format s -I path/a -I path/b --require path/c --require path/d])
-      end
-    end
-
-    context "--drb specified in the options file" do
-      it "renders all the original arguments except --drb" do
-        File.stub(:exist?) { true }
-        IO.stub(:read) { "--drb --color" }
-        config_options_object(*%w[ --tty --format s --line_number 1 --example pattern --profile --backtrace ]).
-          drb_argv.should eq(%w[ --color --profile --backtrace --tty --line_number 1 --example pattern --format s])
-      end
-    end
-
-    context "--drb specified in ARGV and the options file" do
-      it "renders all the original arguments except --drb" do
-        File.stub(:exist?) { true }
-        IO.stub(:read) { "--drb --color" }
-        config_options_object(*%w[ --drb --format s --line_number 1 --example pattern --profile --backtrace]).
-          drb_argv.should eq(%w[ --color --profile --backtrace --line_number 1 --example pattern --format s])
-      end
-    end
-
-    context "--drb specified in ARGV and in as ARGV-specified --options file" do
-      it "renders all the original arguments except --drb and --options" do
-        File.stub(:exist?) { true }
-        IO.stub(:read) { "--drb --color" }
-        config_options_object(*%w[ --drb --format s --line_number 1 --example pattern --profile --backtrace]).
-          drb_argv.should eq(%w[ --color --profile --backtrace --line_number 1 --example pattern --format s ])
-      end
+  describe "default_path" do
+    it "gets set before files_or_directories_to_run" do
+      config = double("config").as_null_object
+      config.should_receive(:force).with(:default_path => 'foo').ordered
+      config.should_receive(:files_or_directories_to_run=).ordered
+      opts = config_options_object("--default_path", "foo")
+      opts.configure(config)
     end
   end
 
   describe "sources: ~/.rspec, ./.rspec, custom, CLI, and SPEC_OPTS" do
-    let(:local_options_file)  { File.join(Dir.tmpdir, ".rspec-local") }
-    let(:global_options_file) { File.join(Dir.tmpdir, ".rspec-global") }
-    let(:custom_options_file) { File.join(Dir.tmpdir, "custom.options") }
-
-    before do
-      @orig_spec_opts = ENV["SPEC_OPTS"]
-      RSpec::Core::ConfigurationOptions::send :public, :global_options_file
-      RSpec::Core::ConfigurationOptions::send :public, :local_options_file
-      RSpec::Core::ConfigurationOptions::any_instance.stub(:global_options_file) { global_options_file }
-      RSpec::Core::ConfigurationOptions::any_instance.stub(:local_options_file) { local_options_file }
-    end
-
-    after do
-      ENV["SPEC_OPTS"] = @orig_spec_opts
-      RSpec::Core::ConfigurationOptions::send :private, :global_options_file
-      RSpec::Core::ConfigurationOptions::send :private, :local_options_file
-    end
-
-    def write_options(scope, options)
-      File.open(send("#{scope}_options_file"), 'w') { |f| f.write(options) }
+    before(:each) do
+      FileUtils.mkpath(File.expand_path("~"))
     end
 
     it "merges global, local, SPEC_OPTS, and CLI" do
-      write_options(:global, "--color")
-      write_options(:local,  "--line 37")
+      File.open("./.rspec", "w") {|f| f << "--line 37"}
+      File.open("~/.rspec", "w") {|f| f << "--color"}
       ENV["SPEC_OPTS"] = "--debug"
       options = parse_options("--drb")
-      options[:color_enabled].should be_true
-      options[:line_number].should eq("37")
+      options[:color].should be_true
+      options[:line_numbers].should eq(["37"])
       options[:debug].should be_true
       options[:drb].should be_true
     end
@@ -330,22 +324,25 @@ describe RSpec::Core::ConfigurationOptions do
     end
 
     it "prefers CLI over file options" do
-      write_options(:local,  "--format local")
-      write_options(:global, "--format global")
+      File.open("./.rspec", "w") {|f| f << "--format local"}
+      File.open("~/.rspec", "w") {|f| f << "--format global"}
       parse_options("--format", "cli")[:formatters].should eq([['cli']])
     end
 
     it "prefers local file options over global" do
-      write_options(:local,  "--format local")
-      write_options(:global, "--format global")
+      File.open("./.rspec", "w") {|f| f << "--format local"}
+      File.open("~/.rspec", "w") {|f| f << "--format global"}
       parse_options[:formatters].should eq([['local']])
     end
 
     context "with custom options file" do
       it "ignores local and global options files" do
-        write_options(:local, "--color")
-        write_options(:global, "--color")
-        parse_options("-O", custom_options_file)[:color_enabled].should be_false
+        File.open("./.rspec", "w") {|f| f << "--format local"}
+        File.open("~/.rspec", "w") {|f| f << "--format global"}
+        File.open("./custom.opts", "w") {|f| f << "--color"}
+        options = parse_options("-O", "./custom.opts")
+        options[:format].should be_nil
+        options[:color].should be_true
       end
     end
   end

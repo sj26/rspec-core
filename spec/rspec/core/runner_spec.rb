@@ -7,6 +7,7 @@ module RSpec::Core
         RSpec::Core::Runner.stub(:installed_at_exit?).and_return(false)
         RSpec::Core::Runner.stub(:running_in_drb?).and_return(false)
         RSpec::Core::Runner.stub(:at_exit_hook_disabled?).and_return(false)
+        RSpec::Core::Runner.stub(:run).and_return(-1)
         RSpec::Core::Runner.should_receive(:at_exit)
         RSpec::Core::Runner.autorun
       end
@@ -25,6 +26,7 @@ module RSpec::Core
       let(:out) { StringIO.new }
 
       it "resets world and configuration" do
+        RSpec.configuration.stub(:files_to_run) { [] }
         RSpec.configuration.should_receive(:reset)
         RSpec.world.should_receive(:reset)
         RSpec::Core::Runner.run([], err, out)
@@ -58,6 +60,7 @@ module RSpec::Core
           end
 
           it "outputs a message" do
+            RSpec.configuration.stub(:files_to_run) { [] }
             err.should_receive(:puts).with(
               "No DRb server is running. Running in local process instead ..."
             )
@@ -65,7 +68,7 @@ module RSpec::Core
           end
 
           it "builds a CommandLine and runs the specs" do
-            process_proxy = double(RSpec::Core::CommandLine, :run => true)
+            process_proxy = double(RSpec::Core::CommandLine, :run => 0)
             process_proxy.should_receive(:run).with(err, out)
 
             RSpec::Core::CommandLine.should_receive(:new).and_return(process_proxy)
